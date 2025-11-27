@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>License Plate Console</title>
+  <link rel="stylesheet" href="/render/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>License Plate Console</h1>
+    <div class="controls">
+      <input id="search" placeholder="Search guest or plate..." />
+      <button id="btn-refresh">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Manual Scan / Register</h2>
+      <form id="scan-form">
+        <input id="plate_number" placeholder="Plate number" required />
+        <input id="guest_name" placeholder="Guest name" />
+        <input id="room_number" placeholder="Room number" />
+        <input id="vehicle_make" placeholder="Make" />
+        <input id="vehicle_model" placeholder="Model" />
+        <button type="submit">Scan / Save</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Records</h2>
+      <div id="records-info"></div>
+      <table id="records-table">
+        <thead>
+          <tr>
+            <th>Plate</th>
+            <th>Guest</th>
+            <th>Room</th>
+            <th>Check In</th>
+            <th>Check Out</th>
+            <th>Notes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/render/static/app.js"></script>
+</body>
+</html>

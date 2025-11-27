@@ -66,6 +66,14 @@ func main() {
 		c.JSON(200, gin.H{"status": "healthy", "service": "licenseplate-plugin"})
 	})
 
+	// Serve the frontend UI from the public directory
+	// static assets are available under /render/static/*
+	router.Static("/render/static", "./public")
+	router.GET("/render", func(c *gin.Context) {
+		// Serve the main HTML file
+		c.File("./public/index.html")
+	})
+
 	// Initialize handlers
 	handler := handlers.NewLicensePlateHandler(licensePlateService)
 	webhookHandler := handlers.NewWebhookHandler(licensePlateService)
