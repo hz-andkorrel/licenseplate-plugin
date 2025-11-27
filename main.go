@@ -68,6 +68,7 @@ func main() {
 
 	// Initialize handlers
 	handler := handlers.NewLicensePlateHandler(licensePlateService)
+	webhookHandler := handlers.NewWebhookHandler(licensePlateService)
 
 	// Register routes
 	api := router.Group(baseAPIRoute)
@@ -76,6 +77,10 @@ func main() {
 		api.GET("/records", handler.GetAllRecords)
 		api.GET("/records/:plate", handler.GetRecord)
 		api.DELETE("/records/:plate", handler.DeleteRecord)
+		
+		// Webhook endpoints
+		api.POST("/webhook/xpots", webhookHandler.HandleXPOTSWebhook)
+		api.GET("/webhook/info", webhookHandler.GetWebhookInfo)
 	}
 
 	// Start server
