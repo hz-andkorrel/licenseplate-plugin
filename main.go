@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"licenseplate-plugin/internal/broker"
+	"licenseplate-plugin/internal/database"
 	"licenseplate-plugin/internal/handlers"
 	"licenseplate-plugin/internal/services"
 
@@ -22,9 +23,25 @@ func main() {
 	port := getEnv("PORT", "8082")
 	host := getEnv("HOST", "localhost")
 	baseAPIRoute := getEnv("BASE_API_ROUTE", "/api/licenseplate")
+	databaseURL := getEnv("DATABASE_URL", "")
+
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL environment variable is required")
+	}
+
+	// Initialize database
+	db := database.NewDatabase(databaseURL)
+
+	// Test database connection
+	if conn, err := db.GetConnection(); err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	} else {
+		conn.Close()
+		log.Println("Successfully connected to database")
+	}
 
 	// Initialize services
-	licensePlateService := services.NewLicensePlateService()
+	licensePlateService := services.NewLicensePlateService(db)
 
 	// Register with broker
 	go broker.RegisterWithBroker()

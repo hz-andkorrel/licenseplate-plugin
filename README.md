@@ -23,16 +23,34 @@ A simple license plate recognition plugin for the Hotel Hub modular platform.
 go mod download
 ```
 
-2. Configure environment variables in `.env`:
+2. Set up PostgreSQL database (if not already set up):
+```bash
+# Using the broker's database
+# Make sure PostgreSQL is running on localhost:5432
+# Default credentials: broker/broker123
+# Default database: broker_db
+```
+
+3. Run database migrations:
+```bash
+# Connect to PostgreSQL and run the migration
+psql -U broker -d broker_db -f migrations/001_create_license_plates_table.sql
+
+# Or on Windows with PowerShell:
+.\setup-database.ps1
+```
+
+4. Configure environment variables in `.env`:
 ```
 PORT=8082
 HOST=localhost
 BROKER_URL=http://localhost:8081
 BROKER_AUTH_TOKEN=your_jwt_token_here
 BASE_API_ROUTE=/api/licenseplate
+DATABASE_URL=postgres://broker:broker123@localhost:5432/broker_db?sslmode=disable
 ```
 
-3. Run the plugin:
+5. Run the plugin:
 ```bash
 go run main.go
 ```
