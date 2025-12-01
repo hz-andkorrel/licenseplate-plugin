@@ -29,18 +29,40 @@ func (s *LicensePlateService) ScanAndStore(req models.ScanRequest) (*models.Lice
 		return nil, errors.New("plate number is required")
 	}
 
+	// Default visitor type to "guest" if not specified
+	visitorType := req.VisitorType
+	if visitorType == "" {
+		visitorType = "guest"
+	}
+
+	// Validate visitor type
+	validTypes := map[string]bool{"guest": true, "visitor": true, "staff": true, "delivery": true, "contractor": true, "vip": true}
+	if !validTypes[visitorType] {
+		return nil, errors.New("invalid visitor type")
+	}
+
+	// Parse expiration time if provided
+	var expiresAt sql.NullTime
+	if req.AccessExpiresAt != "" {
+		parsedTime, err := time.Parse(time.RFC3339, req.AccessExpiresAt)
+		if err != nil {
+			return nil, errors.New("invalid access_expires_at format, use ISO 8601")
+		}
+		expiresAt = sql.NullTime{Time: parsedTime, Valid: true}
+	}
+
 	checkIn := time.Now()
 	query := `
-		INSERT INTO license_plates (plate_number, guest_name, room_number, check_in, vehicle_make, vehicle_model, notes, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO license_plates (plate_number, guest_name, room_number, check_in, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (plate_number) 
-		DO UPDATE SET guest_name = $2, room_number = $3, check_in = $4, vehicle_make = $5, vehicle_model = $6, notes = $7, updated_at = NOW()
+		DO UPDATE SET guest_name = $2, room_number = $3, check_in = $4, vehicle_make = $5, vehicle_model = $6, notes = $7, visitor_type = $8, access_expires_at = $9, purpose = $10, updated_at = NOW()
 		RETURNING id, created_at
 	`
 
 	var id int
 	var createdAt time.Time
-	row := s.db.QueryRow(query, plateNumber, req.GuestName, req.RoomNumber, checkIn, req.VehicleMake, req.VehicleModel, req.Notes, checkIn)
+	row := s.db.QueryRow(query, plateNumber, req.GuestName, req.RoomNumber, checkIn, req.VehicleMake, req.VehicleModel, req.Notes, visitorType, expiresAt, req.Purpose, checkIn)
 	
 	if err := row.Scan(&id, &createdAt); err != nil {
 		log.Println("[LicensePlateService] Error inserting/updating record:", err)
@@ -55,7 +77,13 @@ func (s *LicensePlateService) ScanAndStore(req models.ScanRequest) (*models.Lice
 		VehicleMake:  req.VehicleMake,
 		VehicleModel: req.VehicleModel,
 		Notes:        req.Notes,
+		VisitorType:  visitorType,
+		Purpose:      req.Purpose,
 		CreatedAt:    createdAt,
+	}
+	
+	if expiresAt.Valid {
+		record.AccessExpiresAt = expiresAt.Time
 	}
 
 	return record, nil
@@ -63,7 +91,7 @@ func (s *LicensePlateService) ScanAndStore(req models.ScanRequest) (*models.Lice
 
 func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 	query := `
-		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, created_at
+		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at
 		FROM license_plates
 		ORDER BY created_at DESC
 	`
@@ -85,8 +113,8 @@ func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 	records := make([]*models.LicensePlateRecord, 0)
 	for rows.Next() {
 		var record models.LicensePlateRecord
-		var checkOut sql.NullTime
-		var roomNumber, vehicleMake, vehicleModel, notes sql.NullString
+		var checkOut, expiresAt sql.NullTime
+		var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
 
 		err := rows.Scan(
 			&record.PlateNumber,
@@ -97,6 +125,9 @@ func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 			&vehicleMake,
 			&vehicleModel,
 			&notes,
+			&record.VisitorType,
+			&expiresAt,
+			&purpose,
 			&record.CreatedAt,
 		)
 		if err != nil {
@@ -119,6 +150,12 @@ func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 		if notes.Valid {
 			record.Notes = notes.String
 		}
+		if expiresAt.Valid {
+			record.AccessExpiresAt = expiresAt.Time
+		}
+		if purpose.Valid {
+			record.Purpose = purpose.String
+		}
 
 		records = append(records, &record)
 	}
@@ -130,14 +167,14 @@ func (s *LicensePlateService) GetRecord(plateNumber string) (*models.LicensePlat
 	plateNumber = strings.ToUpper(strings.ReplaceAll(plateNumber, " ", ""))
 
 	query := `
-		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, created_at
+		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at
 		FROM license_plates
 		WHERE plate_number = $1
 	`
 
 	var record models.LicensePlateRecord
-	var checkOut sql.NullTime
-	var roomNumber, vehicleMake, vehicleModel, notes sql.NullString
+	var checkOut, expiresAt sql.NullTime
+	var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
 
 	row := s.db.QueryRow(query, plateNumber)
 	err := row.Scan(
@@ -149,6 +186,9 @@ func (s *LicensePlateService) GetRecord(plateNumber string) (*models.LicensePlat
 		&vehicleMake,
 		&vehicleModel,
 		&notes,
+		&record.VisitorType,
+		&expiresAt,
+		&purpose,
 		&record.CreatedAt,
 	)
 
@@ -175,6 +215,12 @@ func (s *LicensePlateService) GetRecord(plateNumber string) (*models.LicensePlat
 	if notes.Valid {
 		record.Notes = notes.String
 	}
+	if expiresAt.Valid {
+		record.AccessExpiresAt = expiresAt.Time
+	}
+	if purpose.Valid {
+		record.Purpose = purpose.String
+	}
 
 	return &record, nil
 }
@@ -199,7 +245,7 @@ func (s *LicensePlateService) DeleteRecord(plateNumber string) error {
 
 func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.LicensePlateRecord {
 	query := `
-		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, created_at
+		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at
 		FROM license_plates
 		WHERE LOWER(guest_name) LIKE LOWER($1)
 		ORDER BY created_at DESC
@@ -223,8 +269,8 @@ func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.Lice
 	records := make([]*models.LicensePlateRecord, 0)
 	for rows.Next() {
 		var record models.LicensePlateRecord
-		var checkOut sql.NullTime
-		var roomNumber, vehicleMake, vehicleModel, notes sql.NullString
+		var checkOut, expiresAt sql.NullTime
+		var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
 
 		err := rows.Scan(
 			&record.PlateNumber,
@@ -235,6 +281,9 @@ func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.Lice
 			&vehicleMake,
 			&vehicleModel,
 			&notes,
+			&record.VisitorType,
+			&expiresAt,
+			&purpose,
 			&record.CreatedAt,
 		)
 		if err != nil {
@@ -256,6 +305,12 @@ func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.Lice
 		}
 		if notes.Valid {
 			record.Notes = notes.String
+		}
+		if expiresAt.Valid {
+			record.AccessExpiresAt = expiresAt.Time
+		}
+		if purpose.Valid {
+			record.Purpose = purpose.String
 		}
 
 		records = append(records, &record)

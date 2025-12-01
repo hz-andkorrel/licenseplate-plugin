@@ -22,13 +22,21 @@
     tbody.innerHTML = '';
     info.textContent = `${records.length} record(s)`;
     records.forEach(r => {
+      const isExpired = r.access_expires_at && new Date(r.access_expires_at) < new Date();
+      const expiryClass = isExpired ? 'expired' : '';
+      const typeBadge = getTypeBadge(r.visitor_type || 'guest');
+      
       const tr = document.createElement('tr');
+      if (isExpired) tr.classList.add('expired-row');
+      
       tr.innerHTML = `
         <td>${escapeHtml(r.plate_number)}</td>
         <td>${escapeHtml(r.guest_name || '')}</td>
+        <td>${typeBadge}</td>
         <td>${escapeHtml(r.room_number || '')}</td>
         <td>${formatDate(r.check_in)}</td>
         <td>${formatDate(r.check_out)}</td>
+        <td class="${expiryClass}">${formatDate(r.access_expires_at) || '∞'}</td>
         <td>${escapeHtml(r.notes || '')}</td>
         <td>
           <button class="btn" data-plate="${escapeHtml(r.plate_number)}" data-action="view">View</button>
@@ -37,6 +45,18 @@
       `;
       tbody.appendChild(tr);
     });
+  }
+
+  function getTypeBadge(type) {
+    const badges = {
+      guest: '<span class="badge badge-guest">Guest</span>',
+      visitor: '<span class="badge badge-visitor">Visitor</span>',
+      staff: '<span class="badge badge-staff">Staff</span>',
+      delivery: '<span class="badge badge-delivery">Delivery</span>',
+      contractor: '<span class="badge badge-contractor">Contractor</span>',
+      vip: '<span class="badge badge-vip">VIP</span>',
+    };
+    return badges[type] || badges.guest;
   }
 
   function escapeHtml(s){
@@ -52,13 +72,22 @@
   // Scan form
   $('scan-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    const expiryInput = $('access_expires_at').value;
     const payload = {
       plate_number: $('plate_number').value.trim(),
       guest_name: $('guest_name').value.trim(),
       room_number: $('room_number').value.trim(),
       vehicle_make: $('vehicle_make').value.trim(),
       vehicle_model: $('vehicle_model').value.trim(),
+      visitor_type: $('visitor_type').value,
+      purpose: $('purpose').value.trim(),
     };
+    
+    // Convert datetime-local to ISO 8601 if provided
+    if (expiryInput) {
+      payload.access_expires_at = new Date(expiryInput).toISOString();
+    }
+    
     try{
       const res = await fetch(apiBase + '/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
       if(!res.ok) throw new Error('Failed to save');

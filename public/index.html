@@ -21,9 +21,26 @@
       <form id="scan-form">
         <input id="plate_number" placeholder="Plate number" required />
         <input id="guest_name" placeholder="Guest name" />
+        
+        <select id="visitor_type">
+          <option value="guest">Hotel Guest</option>
+          <option value="visitor">Visitor</option>
+          <option value="staff">Staff</option>
+          <option value="delivery">Delivery</option>
+          <option value="contractor">Contractor</option>
+          <option value="vip">VIP</option>
+        </select>
+        
         <input id="room_number" placeholder="Room number" />
         <input id="vehicle_make" placeholder="Make" />
         <input id="vehicle_model" placeholder="Model" />
+        
+        <div class="form-row">
+          <input id="access_expires_at" type="datetime-local" placeholder="Access expires" />
+          <small>Leave empty for permanent access</small>
+        </div>
+        
+        <input id="purpose" placeholder="Purpose (for visitors/contractors)" />
         <button type="submit">Scan / Save</button>
       </form>
     </section>
@@ -35,10 +52,12 @@
         <thead>
           <tr>
             <th>Plate</th>
-            <th>Guest</th>
+            <th>Guest/Name</th>
+            <th>Type</th>
             <th>Room</th>
             <th>Check In</th>
             <th>Check Out</th>
+            <th>Access Expires</th>
             <th>Notes</th>
             <th>Actions</th>
           </tr>
