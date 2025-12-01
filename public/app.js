@@ -11,7 +11,8 @@
       if (query) url += '?q=' + encodeURIComponent(query);
       const res = await fetch(url);
       const data = await res.json();
-      renderRecords(data);
+      // API returns {count: N, records: [...]}
+      renderRecords(data.records || []);
     } catch (err) {
       console.error(err);
       info.textContent = 'Failed to load records';
