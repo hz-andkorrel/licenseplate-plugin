@@ -141,6 +141,88 @@ func scanLicensePlateRecord(scanner interface {
 	return record, nil
 }
 
+// LogParkingEvent creates an entry/exit event record
+func (s *LicensePlateService) LogParkingEvent(plateNumber, eventType string, location, cameraID string, confidence float64, notes string) error {
+	query := `
+		INSERT INTO parking_events (plate_number, event_type, event_time, location, camera_id, confidence, notes)
+		VALUES ($1, $2, NOW(), $3, $4, $5, $6)
+	`
+	
+	_, err := s.db.Execute(query, plateNumber, eventType, location, cameraID, confidence, notes)
+	if err != nil {
+		log.Printf("[LicensePlateService] Error logging parking event: %v", err)
+		return err
+	}
+	
+	log.Printf("Logged %s event for plate %s", eventType, plateNumber)
+	return nil
+}
+
+// GetParkingEvents retrieves all events for a specific license plate
+func (s *LicensePlateService) GetParkingEvents(plateNumber string) ([]models.ParkingEvent, error) {
+	plateNumber = strings.ToUpper(strings.ReplaceAll(plateNumber, " ", ""))
+	
+	query := `
+		SELECT id, plate_number, event_type, event_time, location, camera_id, confidence, notes, created_at
+		FROM parking_events
+		WHERE plate_number = $1
+		ORDER BY event_time DESC
+	`
+	
+	conn, err := s.db.GetConnection()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	
+	rows, err := conn.Query(query, plateNumber)
+	if err != nil {
+		log.Printf("[LicensePlateService] Error querying parking events: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+	
+	events := make([]models.ParkingEvent, 0)
+	for rows.Next() {
+		var event models.ParkingEvent
+		var location, cameraID, notes sql.NullString
+		var confidence sql.NullFloat64
+		
+		err := rows.Scan(
+			&event.ID,
+			&event.PlateNumber,
+			&event.EventType,
+			&event.EventTime,
+			&location,
+			&cameraID,
+			&confidence,
+			&notes,
+			&event.CreatedAt,
+		)
+		if err != nil {
+			log.Printf("[LicensePlateService] Error scanning event row: %v", err)
+			continue
+		}
+		
+		if location.Valid {
+			event.Location = location.String
+		}
+		if cameraID.Valid {
+			event.CameraID = cameraID.String
+		}
+		if confidence.Valid {
+			event.Confidence = confidence.Float64
+		}
+		if notes.Valid {
+			event.Notes = notes.String
+		}
+		
+		events = append(events, event)
+	}
+	
+	return events, nil
+}
+
 func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 	query := `
 		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at
@@ -253,6 +335,7 @@ func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.Lice
 }
 
 // ProcessXPOTSWebhook handles incoming webhook data from XPOTS system
+// Now logs events in parking_events table instead of overwriting check_in/check_out
 func (s *LicensePlateService) ProcessXPOTSWebhook(payload *models.XPOTSWebhookPayload) error {
 	// Normalize plate number
 	plateNumber := strings.ToUpper(strings.ReplaceAll(payload.PlateNumber, " ", ""))
@@ -261,92 +344,39 @@ func (s *LicensePlateService) ProcessXPOTSWebhook(payload *models.XPOTSWebhookPa
 		return errors.New("plate number is required")
 	}
 
-	// Check if record exists
-	existingRecord, _ := s.GetRecord(plateNumber)
-
-	// Handle different event types
+	// Determine event type
+	eventType := "entry"
 	switch payload.EventType {
-	case "entry", "scan", "in":
-		// Vehicle entering - create or update check-in
-		if existingRecord != nil {
-			// Update existing record with new check-in time
-			query := `
-				UPDATE license_plates 
-				SET check_in = $1, updated_at = NOW(), notes = $2
-				WHERE plate_number = $3
-			`
-			notes := fmt.Sprintf("Auto-detected by XPOTS at %s (confidence: %.2f%%)", 
-				payload.Location, payload.Confidence*100)
-			
-			_, err := s.db.Execute(query, payload.Timestamp, notes, plateNumber)
-			if err != nil {
-				log.Printf("[LicensePlateService] Error updating check-in for %s: %v", plateNumber, err)
-				return err
-			}
-			log.Printf("Updated check-in time for plate %s", plateNumber)
-		} else {
-			// Create new record for unknown vehicle
-			query := `
-				INSERT INTO license_plates (plate_number, guest_name, check_in, notes, created_at)
-				VALUES ($1, $2, $3, $4, $5)
-			`
-			guestName := "Unknown Guest (Auto-detected)"
-			notes := fmt.Sprintf("Auto-detected by XPOTS at %s (confidence: %.2f%%, camera: %s)", 
-				payload.Location, payload.Confidence*100, payload.CameraID)
-			
-			_, err := s.db.Execute(query, plateNumber, guestName, payload.Timestamp, notes, time.Now())
-			if err != nil {
-				log.Printf("[LicensePlateService] Error creating record for %s: %v", plateNumber, err)
-				return err
-			}
-			log.Printf("Created new record for unknown plate %s", plateNumber)
-		}
-
 	case "exit", "out":
-		// Vehicle exiting - update check-out time
-		if existingRecord != nil {
-			query := `
-				UPDATE license_plates 
-				SET check_out = $1, updated_at = NOW()
-				WHERE plate_number = $2
-			`
-			_, err := s.db.Execute(query, payload.Timestamp, plateNumber)
-			if err != nil {
-				log.Printf("[LicensePlateService] Error updating check-out for %s: %v", plateNumber, err)
-				return err
-			}
-			log.Printf("Updated check-out time for plate %s", plateNumber)
-		} else {
-			// Unknown vehicle leaving - still log it
-			query := `
-				INSERT INTO license_plates (plate_number, guest_name, check_out, notes, created_at)
-				VALUES ($1, $2, $3, $4, $5)
-			`
-			guestName := "Unknown Guest (Exit only)"
-			notes := fmt.Sprintf("Exit detected by XPOTS at %s (no entry record found)", payload.Location)
-			
-			_, err := s.db.Execute(query, plateNumber, guestName, payload.Timestamp, notes, time.Now())
-			if err != nil {
-				log.Printf("[LicensePlateService] Error creating exit record for %s: %v", plateNumber, err)
-				return err
-			}
-			log.Printf("Created exit record for unknown plate %s", plateNumber)
-		}
-
+		eventType = "exit"
+	case "entry", "scan", "in":
+		eventType = "entry"
 	default:
 		log.Printf("Unknown event type '%s' for plate %s - treating as entry", payload.EventType, plateNumber)
-		// Treat unknown events as entry by default
-		if existingRecord == nil {
-			query := `
-				INSERT INTO license_plates (plate_number, guest_name, check_in, notes, created_at)
-				VALUES ($1, $2, $3, $4, $5)
-			`
-			guestName := "Unknown Guest (Auto-detected)"
-			notes := fmt.Sprintf("Event: %s, Location: %s, Camera: %s", 
-				payload.EventType, payload.Location, payload.CameraID)
-			
-			_, err := s.db.Execute(query, plateNumber, guestName, payload.Timestamp, notes, time.Now())
-			return err
+	}
+
+	// Log the parking event
+	notes := fmt.Sprintf("Auto-detected by XPOTS (confidence: %.2f%%)", payload.Confidence*100)
+	err := s.LogParkingEvent(plateNumber, eventType, payload.Location, payload.CameraID, payload.Confidence, notes)
+	if err != nil {
+		return err
+	}
+
+	// Check if vehicle is registered in license_plates table
+	existingRecord, _ := s.GetRecord(plateNumber)
+	
+	if existingRecord == nil {
+		// Unknown vehicle - create a record for tracking
+		query := `
+			INSERT INTO license_plates (plate_number, guest_name, check_in, notes, visitor_type, created_at)
+			VALUES ($1, $2, $3, $4, $5, NOW())
+		`
+		guestName := "Unknown Guest (Auto-detected)"
+		notes := fmt.Sprintf("First detected at %s by camera %s", payload.Location, payload.CameraID)
+		
+		_, err := s.db.Execute(query, plateNumber, guestName, payload.Timestamp, notes, "visitor")
+		if err != nil {
+			log.Printf("[LicensePlateService] Error creating record for unknown vehicle %s: %v", plateNumber, err)
 		}
 	}
 

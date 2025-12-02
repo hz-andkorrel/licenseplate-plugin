@@ -29,6 +29,7 @@
       
       const tr = document.createElement('tr');
       if (isExpired) tr.classList.add('expired-row');
+      tr.dataset.plate = r.plate_number;
       
       tr.innerHTML = `
         <td>${escapeHtml(r.plate_number)}</td>
@@ -40,7 +41,7 @@
         <td class="${expiryClass}">${formatDate(r.access_expires_at) || '∞'}</td>
         <td>${escapeHtml(r.notes || '')}</td>
         <td>
-          <button class="btn" data-plate="${escapeHtml(r.plate_number)}" data-action="view">View</button>
+          <button class="btn" data-plate="${escapeHtml(r.plate_number)}" data-action="history">History</button>
           <button class="btn danger" data-plate="${escapeHtml(r.plate_number)}" data-action="delete">Delete</button>
         </td>
       `;
@@ -107,6 +108,7 @@
     if(!btn) return;
     const plate = btn.dataset.plate;
     const action = btn.dataset.action;
+    
     if(action === 'delete'){
       if(!confirm('Delete record for ' + plate + '?')) return;
       try{
@@ -118,18 +120,73 @@
         info.textContent = 'Delete failed';
       }
     }
-    if(action === 'view'){
-      try{
-        const res = await fetch(apiBase + '/records/' + encodeURIComponent(plate));
-        if(!res.ok) throw new Error('Not found');
-        const r = await res.json();
-        alert(JSON.stringify(r, null, 2));
-      }catch(err){
-        console.error(err);
-        info.textContent = 'Failed to load record';
-      }
+    
+    if(action === 'history'){
+      await showEventHistory(plate);
     }
   });
+
+  async function showEventHistory(plate) {
+    try {
+      const res = await fetch(apiBase + '/records/' + encodeURIComponent(plate) + '/events');
+      if (!res.ok) throw new Error('Failed to load history');
+      const data = await res.json();
+      
+      // Find the row and check if history is already shown
+      const row = tbody.querySelector(`tr[data-plate="${plate}"]`);
+      const existingHistoryRow = row.nextElementSibling;
+      
+      if (existingHistoryRow && existingHistoryRow.classList.contains('history-row')) {
+        // Toggle - remove existing history
+        existingHistoryRow.remove();
+        return;
+      }
+      
+      // Create history row
+      const historyRow = document.createElement('tr');
+      historyRow.classList.add('history-row');
+      historyRow.innerHTML = `
+        <td colspan="9">
+          <div class="history-container">
+            <h4>Parking Events for ${escapeHtml(plate)}</h4>
+            ${data.events && data.events.length > 0 
+              ? `<table class="history-table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Time</th>
+                      <th>Location</th>
+                      <th>Camera</th>
+                      <th>Confidence</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${data.events.map(e => `
+                      <tr class="event-${e.event_type}">
+                        <td><span class="event-badge event-${e.event_type}">${e.event_type.toUpperCase()}</span></td>
+                        <td>${formatDate(e.event_time)}</td>
+                        <td>${escapeHtml(e.location || '-')}</td>
+                        <td>${escapeHtml(e.camera_id || '-')}</td>
+                        <td>${e.confidence ? (e.confidence * 100).toFixed(0) + '%' : '-'}</td>
+                        <td>${escapeHtml(e.notes || '-')}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>`
+              : '<p>No events recorded yet.</p>'
+            }
+          </div>
+        </td>
+      `;
+      
+      row.after(historyRow);
+      
+    } catch (err) {
+      console.error(err);
+      alert('Failed to load event history');
+    }
+  }
 
   // Search / refresh
   $('btn-refresh').addEventListener('click', () => loadRecords($('search').value.trim()));

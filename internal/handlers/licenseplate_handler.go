@@ -76,3 +76,19 @@ func (h *LicensePlateHandler) DeleteRecord(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Record deleted successfully"})
 }
+
+// GetParkingEvents retrieves the event history for a specific license plate
+func (h *LicensePlateHandler) GetParkingEvents(c *gin.Context) {
+	plate := c.Param("plate")
+	events, err := h.service.GetParkingEvents(plate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve parking events"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"plate_number": plate,
+		"events":       events,
+		"count":        len(events),
+	})
+}

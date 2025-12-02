@@ -14,6 +14,8 @@ type LicensePlateRecord struct {
 	VisitorType      string    `json:"visitor_type"`           // guest, visitor, staff, delivery, contractor, vip
 	AccessExpiresAt  time.Time `json:"access_expires_at,omitempty"` // When temporary access expires
 	Purpose          string    `json:"purpose,omitempty"`      // Purpose of visit for non-guests
+	GuestID          string    `json:"guest_id,omitempty"`     // Reference to booking system guest
+	ReservationID    string    `json:"reservation_id,omitempty"` // Reference to booking system reservation
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -27,4 +29,6 @@ type ScanRequest struct {
 	VisitorType     string `json:"visitor_type"`      // guest, visitor, staff, delivery, contractor, vip
 	AccessExpiresAt string `json:"access_expires_at"` // ISO 8601 timestamp for expiration
 	Purpose         string `json:"purpose"`           // Purpose of visit
+	GuestID         string `json:"guest_id"`          // Optional: link to booking system
+	ReservationID   string `json:"reservation_id"`    // Optional: link to booking system
 }

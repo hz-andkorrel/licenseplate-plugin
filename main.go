@@ -84,6 +84,7 @@ func main() {
 		api.POST("/scan", handler.ScanLicensePlate)
 		api.GET("/records", handler.GetAllRecords)
 		api.GET("/records/:plate", handler.GetRecord)
+		api.GET("/records/:plate/events", handler.GetParkingEvents)
 		api.DELETE("/records/:plate", handler.DeleteRecord)
 		
 		// Webhook endpoints
