@@ -89,6 +89,58 @@ func (s *LicensePlateService) ScanAndStore(req models.ScanRequest) (*models.Lice
 	return record, nil
 }
 
+// scanLicensePlateRecord is a helper function to reduce duplicate code
+func scanLicensePlateRecord(scanner interface {
+	Scan(dest ...interface{}) error
+}) (*models.LicensePlateRecord, error) {
+	record := &models.LicensePlateRecord{}
+	var checkOut, expiresAt sql.NullTime
+	var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
+
+	err := scanner.Scan(
+		&record.PlateNumber,
+		&record.GuestName,
+		&roomNumber,
+		&record.CheckIn,
+		&checkOut,
+		&vehicleMake,
+		&vehicleModel,
+		&notes,
+		&record.VisitorType,
+		&expiresAt,
+		&purpose,
+		&record.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle nullable fields
+	if checkOut.Valid {
+		record.CheckOut = checkOut.Time
+	}
+	if roomNumber.Valid {
+		record.RoomNumber = roomNumber.String
+	}
+	if vehicleMake.Valid {
+		record.VehicleMake = vehicleMake.String
+	}
+	if vehicleModel.Valid {
+		record.VehicleModel = vehicleModel.String
+	}
+	if notes.Valid {
+		record.Notes = notes.String
+	}
+	if expiresAt.Valid {
+		record.AccessExpiresAt = expiresAt.Time
+	}
+	if purpose.Valid {
+		record.Purpose = purpose.String
+	}
+
+	return record, nil
+}
+
 func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 	query := `
 		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at
@@ -112,52 +164,12 @@ func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 
 	records := make([]*models.LicensePlateRecord, 0)
 	for rows.Next() {
-		var record models.LicensePlateRecord
-		var checkOut, expiresAt sql.NullTime
-		var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
-
-		err := rows.Scan(
-			&record.PlateNumber,
-			&record.GuestName,
-			&roomNumber,
-			&record.CheckIn,
-			&checkOut,
-			&vehicleMake,
-			&vehicleModel,
-			&notes,
-			&record.VisitorType,
-			&expiresAt,
-			&purpose,
-			&record.CreatedAt,
-		)
+		record, err := scanLicensePlateRecord(rows)
 		if err != nil {
 			log.Println("[LicensePlateService] Error scanning row:", err)
 			continue
 		}
-
-		if checkOut.Valid {
-			record.CheckOut = checkOut.Time
-		}
-		if roomNumber.Valid {
-			record.RoomNumber = roomNumber.String
-		}
-		if vehicleMake.Valid {
-			record.VehicleMake = vehicleMake.String
-		}
-		if vehicleModel.Valid {
-			record.VehicleModel = vehicleModel.String
-		}
-		if notes.Valid {
-			record.Notes = notes.String
-		}
-		if expiresAt.Valid {
-			record.AccessExpiresAt = expiresAt.Time
-		}
-		if purpose.Valid {
-			record.Purpose = purpose.String
-		}
-
-		records = append(records, &record)
+		records = append(records, record)
 	}
 
 	return records
@@ -172,25 +184,8 @@ func (s *LicensePlateService) GetRecord(plateNumber string) (*models.LicensePlat
 		WHERE plate_number = $1
 	`
 
-	var record models.LicensePlateRecord
-	var checkOut, expiresAt sql.NullTime
-	var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
-
 	row := s.db.QueryRow(query, plateNumber)
-	err := row.Scan(
-		&record.PlateNumber,
-		&record.GuestName,
-		&roomNumber,
-		&record.CheckIn,
-		&checkOut,
-		&vehicleMake,
-		&vehicleModel,
-		&notes,
-		&record.VisitorType,
-		&expiresAt,
-		&purpose,
-		&record.CreatedAt,
-	)
+	record, err := scanLicensePlateRecord(row)
 
 	if err == sql.ErrNoRows {
 		return nil, errors.New("record not found")
@@ -200,29 +195,7 @@ func (s *LicensePlateService) GetRecord(plateNumber string) (*models.LicensePlat
 		return nil, errors.New("failed to retrieve record")
 	}
 
-	if checkOut.Valid {
-		record.CheckOut = checkOut.Time
-	}
-	if roomNumber.Valid {
-		record.RoomNumber = roomNumber.String
-	}
-	if vehicleMake.Valid {
-		record.VehicleMake = vehicleMake.String
-	}
-	if vehicleModel.Valid {
-		record.VehicleModel = vehicleModel.String
-	}
-	if notes.Valid {
-		record.Notes = notes.String
-	}
-	if expiresAt.Valid {
-		record.AccessExpiresAt = expiresAt.Time
-	}
-	if purpose.Valid {
-		record.Purpose = purpose.String
-	}
-
-	return &record, nil
+	return record, nil
 }
 
 func (s *LicensePlateService) DeleteRecord(plateNumber string) error {
@@ -268,52 +241,12 @@ func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.Lice
 
 	records := make([]*models.LicensePlateRecord, 0)
 	for rows.Next() {
-		var record models.LicensePlateRecord
-		var checkOut, expiresAt sql.NullTime
-		var roomNumber, vehicleMake, vehicleModel, notes, purpose sql.NullString
-
-		err := rows.Scan(
-			&record.PlateNumber,
-			&record.GuestName,
-			&roomNumber,
-			&record.CheckIn,
-			&checkOut,
-			&vehicleMake,
-			&vehicleModel,
-			&notes,
-			&record.VisitorType,
-			&expiresAt,
-			&purpose,
-			&record.CreatedAt,
-		)
+		record, err := scanLicensePlateRecord(rows)
 		if err != nil {
 			log.Println("[LicensePlateService] Error scanning row:", err)
 			continue
 		}
-
-		if checkOut.Valid {
-			record.CheckOut = checkOut.Time
-		}
-		if roomNumber.Valid {
-			record.RoomNumber = roomNumber.String
-		}
-		if vehicleMake.Valid {
-			record.VehicleMake = vehicleMake.String
-		}
-		if vehicleModel.Valid {
-			record.VehicleModel = vehicleModel.String
-		}
-		if notes.Valid {
-			record.Notes = notes.String
-		}
-		if expiresAt.Valid {
-			record.AccessExpiresAt = expiresAt.Time
-		}
-		if purpose.Valid {
-			record.Purpose = purpose.String
-		}
-
-		records = append(records, &record)
+		records = append(records, record)
 	}
 
 	return records
