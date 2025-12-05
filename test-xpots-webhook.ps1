@@ -4,7 +4,7 @@
 Write-Host "`n=== XPOTS Webhook Integration Test ===" -ForegroundColor Cyan
 
 # Configuration
-$baseUrl = "http://localhost:8082/api/licenseplate"
+$baseUrl = "http://localhost:9002/api/licenseplate"
 $webhookKey = "test-webhook-key-12345"
 
 Write-Host "`nNote: Make sure to set WEBHOOK_API_KEY=$webhookKey in your .env file" -ForegroundColor Yellow

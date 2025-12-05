@@ -5,10 +5,20 @@
   const tbody = document.querySelector('#records-table tbody');
   const info = $('records-info');
 
-  async function loadRecords(query) {
+  async function loadRecords(filters = {}) {
     try {
       let url = apiBase + '/records';
-      if (query) url += '?q=' + encodeURIComponent(query);
+      const params = new URLSearchParams();
+      
+      if (filters.search) params.append('search', filters.search);
+      if (filters.visitorType) params.append('visitor_type', filters.visitorType);
+      if (filters.dateFrom) params.append('date_from', filters.dateFrom);
+      if (filters.dateTo) params.append('date_to', filters.dateTo);
+      
+      if (params.toString()) {
+        url += '?' + params.toString();
+      }
+      
       const res = await fetch(url);
       const data = await res.json();
       // API returns {count: N, records: [...]}
@@ -189,8 +199,20 @@
   }
 
   // Search / refresh
-  $('btn-refresh').addEventListener('click', () => loadRecords($('search').value.trim()));
-  $('search').addEventListener('keyup', (e) => { if(e.key === 'Enter') loadRecords($('search').value.trim()); });
+  function applyFilters() {
+    loadRecords({
+      search: $('search').value.trim(),
+      visitorType: $('filter-type').value,
+      dateFrom: $('filter-date-from').value,
+      dateTo: $('filter-date-to').value
+    });
+  }
+  
+  $('btn-refresh').addEventListener('click', applyFilters);
+  $('search').addEventListener('keyup', (e) => { if(e.key === 'Enter') applyFilters(); });
+  $('filter-type').addEventListener('change', applyFilters);
+  $('filter-date-from').addEventListener('change', applyFilters);
+  $('filter-date-to').addEventListener('change', applyFilters);
 
   // initial load
   loadRecords();

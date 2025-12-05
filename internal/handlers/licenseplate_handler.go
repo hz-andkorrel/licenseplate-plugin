@@ -38,18 +38,15 @@ func (h *LicensePlateHandler) ScanLicensePlate(c *gin.Context) {
 }
 
 func (h *LicensePlateHandler) GetAllRecords(c *gin.Context) {
-	guestName := c.Query("guest_name")
-	
-	if guestName != "" {
-		records := h.service.SearchByGuestName(guestName)
-		c.JSON(http.StatusOK, gin.H{
-			"records": records,
-			"count":   len(records),
-		})
-		return
+	// Parse query parameters for search and filters
+	filters := services.SearchFilters{
+		Search:      c.Query("search"),       // Search in plate or name
+		VisitorType: c.Query("visitor_type"), // Filter by type
+		DateFrom:    c.Query("date_from"),    // Filter from date
+		DateTo:      c.Query("date_to"),      // Filter to date
 	}
 
-	records := h.service.GetAllRecords()
+	records := h.service.GetAllRecords(filters)
 	c.JSON(http.StatusOK, gin.H{
 		"records": records,
 		"count":   len(records),

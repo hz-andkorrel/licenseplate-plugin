@@ -20,7 +20,7 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	port := getEnv("PORT", "8082")
+	port := getEnv("PORT", "9002")
 	host := getEnv("HOST", "localhost")
 	baseAPIRoute := getEnv("BASE_API_ROUTE", "/api/licenseplate")
 	databaseURL := getEnv("DATABASE_URL", "")

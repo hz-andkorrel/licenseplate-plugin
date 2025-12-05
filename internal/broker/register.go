@@ -37,7 +37,7 @@ func RegisterWithBroker() {
 		host = "localhost"
 	}
 	if port == "" {
-		port = "8082"
+		port = "9002"
 	}
 	if baseAPIRoute == "" {
 		baseAPIRoute = "/api/licenseplate"

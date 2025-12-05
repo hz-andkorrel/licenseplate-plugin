@@ -17,7 +17,7 @@ Get-Content migrations/003_create_parking_events.sql | docker exec -i hotelhub-p
 go run main.go
 
 # 4. Open UI
-http://localhost:8082/render
+http://localhost:9002/render
 ```
 
 ## Features
@@ -43,7 +43,7 @@ POST   /api/licenseplate/webhook/xpots     - XPOTS webhook
 ## XPOTS Setup
 
 Configure camera system:
-- URL: `http://your-server:8082/api/licenseplate/webhook/xpots`
+- URL: `http://your-server:9002/api/licenseplate/webhook/xpots`
 - Header: `Authorization: Bearer your-webhook-key`
 
 ## License

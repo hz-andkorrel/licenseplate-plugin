@@ -223,12 +223,54 @@ func (s *LicensePlateService) GetParkingEvents(plateNumber string) ([]models.Par
 	return events, nil
 }
 
-func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
+// SearchFilters contains all search and filter parameters
+type SearchFilters struct {
+	Search       string // Search in plate_number or guest_name
+	VisitorType  string // Filter by visitor type
+	DateFrom     string // Filter by check_in >= date
+	DateTo       string // Filter by check_in <= date
+}
+
+func (s *LicensePlateService) GetAllRecords(filters SearchFilters) []*models.LicensePlateRecord {
+	// Build dynamic query based on filters
 	query := `
 		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at
 		FROM license_plates
-		ORDER BY created_at DESC
+		WHERE 1=1
 	`
+	
+	args := make([]interface{}, 0)
+	argIndex := 1
+	
+	// Add search filter (plate number or guest name)
+	if filters.Search != "" {
+		query += fmt.Sprintf(" AND (UPPER(plate_number) LIKE $%d OR UPPER(guest_name) LIKE $%d)", argIndex, argIndex)
+		args = append(args, "%"+strings.ToUpper(filters.Search)+"%")
+		argIndex++
+	}
+	
+	// Add visitor type filter
+	if filters.VisitorType != "" {
+		query += fmt.Sprintf(" AND visitor_type = $%d", argIndex)
+		args = append(args, filters.VisitorType)
+		argIndex++
+	}
+	
+	// Add date from filter
+	if filters.DateFrom != "" {
+		query += fmt.Sprintf(" AND check_in >= $%d", argIndex)
+		args = append(args, filters.DateFrom)
+		argIndex++
+	}
+	
+	// Add date to filter
+	if filters.DateTo != "" {
+		query += fmt.Sprintf(" AND check_in <= $%d", argIndex)
+		args = append(args, filters.DateTo)
+		argIndex++
+	}
+	
+	query += " ORDER BY created_at DESC"
 
 	conn, err := s.db.GetConnection()
 	if err != nil {
@@ -237,7 +279,7 @@ func (s *LicensePlateService) GetAllRecords() []*models.LicensePlateRecord {
 	}
 	defer conn.Close()
 
-	rows, err := conn.Query(query)
+	rows, err := conn.Query(query, args...)
 	if err != nil {
 		log.Println("[LicensePlateService] Error querying records:", err)
 		return []*models.LicensePlateRecord{}
