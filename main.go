@@ -15,7 +15,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
+
+// Global Redis client for event bus
+var redisClient *redis.Client
 
 func main() {
 	// Load environment variables
@@ -31,6 +35,9 @@ func main() {
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
+
+	// Initialize Redis event bus
+	initRedis()
 
 	// Initialize database
 	db := database.NewDatabase(databaseURL)
@@ -52,7 +59,7 @@ func main() {
 	// Start event listener (subscribes to 'events' channel)
 	go func() {
 		ctx := context.Background()
-		_ = eventbus.Listen(ctx, "events", func(channel, message string) {
+		_ = eventbus.Listen(ctx, redisClient, "events", func(channel, message string) {
 			// Dispatch incoming events to typed handlers
 			// use the licensePlateService to let handlers call service-layer logic
 			// non-blocking: dispatcher will start handlers asynchronously
@@ -84,7 +91,7 @@ func main() {
 	})
 
 	// Initialize handlers
-	handler := handlers.NewLicensePlateHandler(licensePlateService)
+	handler := handlers.NewLicensePlateHandler(licensePlateService, redisClient)
 	webhookHandler := handlers.NewWebhookHandler(licensePlateService)
 
 	// Register routes
@@ -114,6 +121,27 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// initRedis initializes the global Redis client for the event bus
+func initRedis() {
+	redisAddr := getEnv("HUB_BUS_ADDR", "localhost:6379")
+
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       0,
+	})
+
+	// Test connection
+	ctx := context.Background()
+	_, err := redisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Printf("Warning: Failed to connect to Redis at %s: %v", redisAddr, err)
+		log.Println("Plugin will continue without event bus functionality")
+	} else {
+		log.Printf("✓ Connected to Redis event bus at %s", redisAddr)
+	}
 }
 
 // eventDispatchWrapper is a tiny indirection so we can call the dispatcher
