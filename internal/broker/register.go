@@ -23,12 +23,6 @@ type PluginRegistration struct {
 }
 
 func RegisterWithBroker() {
-	// Check if broker registration is disabled
-	if os.Getenv("DISABLE_BROKER_REGISTRATION") == "true" {
-		log.Println("Broker registration disabled (DISABLE_BROKER_REGISTRATION=true)")
-		return
-	}
-
 	brokerURL := os.Getenv("BROKER_URL")
 	if brokerURL == "" {
 		brokerURL = "http://localhost:8081"
