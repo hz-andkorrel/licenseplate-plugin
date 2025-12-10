@@ -1,4 +1,4 @@
-# License Plate Plugin (short)
+# License Plate Plugin
 
 This service provides an API for registering and managing license plate scans and related parking events. The plugin is API-only (no built-in frontend).
 
