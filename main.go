@@ -9,6 +9,7 @@ import (
 	"licenseplate-plugin/internal/broker"
 	"licenseplate-plugin/internal/database"
 	"licenseplate-plugin/internal/handlers"
+	evt "licenseplate-plugin/internal/events"
 	"licenseplate-plugin/internal/services"
 	"licenseplate-plugin/internal/eventbus"
 
@@ -52,8 +53,13 @@ func main() {
 	go func() {
 		ctx := context.Background()
 		_ = eventbus.Listen(ctx, "events", func(channel, message string) {
-			log.Printf("Event received on %s: %s", channel, message)
-			// TODO: add specific handling logic for events if needed
+			// Dispatch incoming events to typed handlers
+			// use the licensePlateService to let handlers call service-layer logic
+			// non-blocking: dispatcher will start handlers asynchronously
+			imported := licensePlateService
+			// call into the events dispatcher
+			// note: package imported below to avoid unused import until file edited
+			eventDispatchWrapper(ctx, imported, message)
 		})
 	}()
 
@@ -108,4 +114,10 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// eventDispatchWrapper is a tiny indirection so we can call the dispatcher
+// without adding complex logic inline in the listener callback.
+func eventDispatchWrapper(ctx context.Context, svc *services.LicensePlateService, message string) {
+	evt.Dispatch(ctx, svc, message)
 }
