@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"licenseplate-plugin/internal/eventbus"
 	"licenseplate-plugin/internal/models"
 	"licenseplate-plugin/internal/services"
 	"net/http"
@@ -30,6 +32,18 @@ func (h *LicensePlateHandler) ScanLicensePlate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Publish event to event bus asynchronously
+	go func(rec interface{}) {
+		payload := map[string]interface{}{
+			"type":   "licenseplate.scanned",
+			"record": rec,
+		}
+		if b, err := json.Marshal(payload); err == nil {
+			// use request context so cancellation propagates
+			_ = eventbus.Publish(c.Request.Context(), "events", string(b))
+		}
+	}(record)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "License plate scanned successfully",
