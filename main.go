@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"licenseplate-plugin/internal/database"
 	"licenseplate-plugin/internal/handlers"
 	"licenseplate-plugin/internal/services"
+	"licenseplate-plugin/internal/eventbus"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -45,6 +47,15 @@ func main() {
 
 	// Register with broker
 	go broker.RegisterWithBroker()
+
+	// Start event listener (subscribes to 'events' channel)
+	go func() {
+		ctx := context.Background()
+		_ = eventbus.Listen(ctx, "events", func(channel, message string) {
+			log.Printf("Event received on %s: %s", channel, message)
+			// TODO: add specific handling logic for events if needed
+		})
+	}()
 
 	// Setup Gin router
 	router := gin.Default()
