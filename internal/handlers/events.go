@@ -4,6 +4,7 @@ import (
     "context"
     "encoding/json"
     "fmt"
+    "log"
 
     "licenseplate-plugin/internal/models"
     "licenseplate-plugin/internal/services"
