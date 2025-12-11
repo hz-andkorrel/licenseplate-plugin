@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"licenseplate-plugin/internal/broker"
 	"licenseplate-plugin/internal/database"
@@ -69,6 +70,11 @@ func main() {
 			eventDispatchWrapper(ctx, imported, message)
 		})
 	}()
+
+	// Start background outbox publisher to reliably deliver events from DB to Redis
+	ctx := context.Background()
+	// run every 10s, process up to 50 events per tick
+	startOutboxPublisher(ctx, licensePlateService, redisClient, 10*time.Second, 50)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -148,4 +154,52 @@ func initRedis() {
 // without adding complex logic inline in the listener callback.
 func eventDispatchWrapper(ctx context.Context, svc *services.LicensePlateService, message string) {
 	evt.Dispatch(ctx, svc, message)
+}
+
+// startOutboxPublisher runs a background goroutine that periodically
+// fetches pending outbox events from the database and publishes them
+// to the Redis event bus. On success the event is marked as sent; on
+// failure the attempts counter is incremented and the error recorded.
+func startOutboxPublisher(ctx context.Context, svc *services.LicensePlateService, client *redis.Client, interval time.Duration, batchSize int) {
+	if client == nil {
+		log.Println("[OutboxPublisher] redis client is nil; outbox publisher disabled")
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("[OutboxPublisher] context canceled, stopping publisher")
+				return
+			case <-ticker.C:
+				events, err := svc.FetchPendingOutboxEvents(batchSize)
+				if err != nil {
+					log.Printf("[OutboxPublisher] fetch error: %v", err)
+					continue
+				}
+
+				for _, e := range events {
+					// attempt publish
+					if err := eventbus.Publish(ctx, client, e.Channel, e.Payload); err != nil {
+						log.Printf("[OutboxPublisher] publish failed id=%d: %v", e.ID, err)
+						_ = svc.IncrementOutboxAttempts(e.ID, err.Error())
+						continue
+					}
+
+					// mark as sent
+					if err := svc.MarkOutboxSent(e.ID); err != nil {
+						log.Printf("[OutboxPublisher] mark sent failed id=%d: %v", e.ID, err)
+						_ = svc.IncrementOutboxAttempts(e.ID, "mark sent failed: "+err.Error())
+						continue
+					}
+
+					log.Printf("[OutboxPublisher] published and marked sent id=%d channel=%s", e.ID, e.Channel)
+				}
+			}
+		}
+	}()
 }
