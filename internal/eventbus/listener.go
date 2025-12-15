@@ -3,23 +3,20 @@ package eventbus
 import (
     "context"
     "fmt"
-    "os"
+    "log"
 
     "github.com/redis/go-redis/v9"
 )
 
-func Listen(ctx context.Context, channel string, handler func(channel, message string)) error {
-    addr := os.Getenv("HUB_BUS_ADDR")
-    if addr == "" {
-        addr = "hub_bus:6379"
+// Listen subscribes to the given channel and calls the handler for each message.
+// Uses the provided Redis client (typically a global shared client).
+func Listen(ctx context.Context, client *redis.Client, channel string, handler func(channel, message string)) error {
+    if client == nil {
+        log.Println("Redis client is nil, skipping event listener")
+        return nil
     }
 
-    r := redis.NewClient(&redis.Options{
-        Addr: addr,
-        DB:   0,
-    })
-
-    sub := r.Subscribe(ctx, channel)
+    sub := client.Subscribe(ctx, channel)
     ch := sub.Channel()
 
     go func() {

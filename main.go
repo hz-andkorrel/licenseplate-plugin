@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"licenseplate-plugin/internal/broker"
 	"licenseplate-plugin/internal/database"
@@ -15,7 +16,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
+
+// Global Redis client for event bus
+var redisClient *redis.Client
 
 func main() {
 	// Load environment variables
@@ -31,6 +36,9 @@ func main() {
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
+
+	// Initialize Redis event bus
+	initRedis()
 
 	// Initialize database
 	db := database.NewDatabase(databaseURL)
@@ -52,7 +60,7 @@ func main() {
 	// Start event listener (subscribes to 'events' channel)
 	go func() {
 		ctx := context.Background()
-		_ = eventbus.Listen(ctx, "events", func(channel, message string) {
+		_ = eventbus.Listen(ctx, redisClient, "events", func(channel, message string) {
 			// Dispatch incoming events to typed handlers
 			// use the licensePlateService to let handlers call service-layer logic
 			// non-blocking: dispatcher will start handlers asynchronously
@@ -62,6 +70,11 @@ func main() {
 			eventDispatchWrapper(ctx, imported, message)
 		})
 	}()
+
+	// Start background outbox publisher to reliably deliver events from DB to Redis
+	ctx := context.Background()
+	// run every 10s, process up to 50 events per tick
+	startOutboxPublisher(ctx, licensePlateService, redisClient, 10*time.Second, 50)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -84,7 +97,7 @@ func main() {
 	})
 
 	// Initialize handlers
-	handler := handlers.NewLicensePlateHandler(licensePlateService)
+	handler := handlers.NewLicensePlateHandler(licensePlateService, redisClient)
 	webhookHandler := handlers.NewWebhookHandler(licensePlateService)
 
 	// Register routes
@@ -116,8 +129,77 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// initRedis initializes the global Redis client for the event bus
+func initRedis() {
+	redisAddr := getEnv("HUB_BUS_ADDR", "localhost:6379")
+
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       0,
+	})
+
+	// Test connection
+	ctx := context.Background()
+	_, err := redisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Printf("Warning: Failed to connect to Redis at %s: %v", redisAddr, err)
+		log.Println("Plugin will continue without event bus functionality")
+	} else {
+		log.Printf("✓ Connected to Redis event bus at %s", redisAddr)
+	}
+}
+
 // eventDispatchWrapper is a tiny indirection so we can call the dispatcher
 // without adding complex logic inline in the listener callback.
 func eventDispatchWrapper(ctx context.Context, svc *services.LicensePlateService, message string) {
 	evt.Dispatch(ctx, svc, message)
+}
+
+// startOutboxPublisher runs a background goroutine that periodically
+// fetches pending outbox events from the database and publishes them
+// to the Redis event bus. On success the event is marked as sent; on
+// failure the attempts counter is incremented and the error recorded.
+func startOutboxPublisher(ctx context.Context, svc *services.LicensePlateService, client *redis.Client, interval time.Duration, batchSize int) {
+	if client == nil {
+		log.Println("[OutboxPublisher] redis client is nil; outbox publisher disabled")
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("[OutboxPublisher] context canceled, stopping publisher")
+				return
+			case <-ticker.C:
+				events, err := svc.FetchPendingOutboxEvents(batchSize)
+				if err != nil {
+					log.Printf("[OutboxPublisher] fetch error: %v", err)
+					continue
+				}
+
+				for _, e := range events {
+					// attempt publish
+					if err := eventbus.Publish(ctx, client, e.Channel, e.Payload); err != nil {
+						log.Printf("[OutboxPublisher] publish failed id=%d: %v", e.ID, err)
+						_ = svc.IncrementOutboxAttempts(e.ID, err.Error())
+						continue
+					}
+
+					// mark as sent
+					if err := svc.MarkOutboxSent(e.ID); err != nil {
+						log.Printf("[OutboxPublisher] mark sent failed id=%d: %v", e.ID, err)
+						_ = svc.IncrementOutboxAttempts(e.ID, "mark sent failed: "+err.Error())
+						continue
+					}
+
+					log.Printf("[OutboxPublisher] published and marked sent id=%d channel=%s", e.ID, e.Channel)
+				}
+			}
+		}
+	}()
 }

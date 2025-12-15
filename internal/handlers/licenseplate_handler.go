@@ -8,15 +8,18 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 type LicensePlateHandler struct {
-	service *services.LicensePlateService
+	service     *services.LicensePlateService
+	redisClient *redis.Client
 }
 
-func NewLicensePlateHandler(service *services.LicensePlateService) *LicensePlateHandler {
+func NewLicensePlateHandler(service *services.LicensePlateService, redisClient *redis.Client) *LicensePlateHandler {
 	return &LicensePlateHandler{
-		service: service,
+		service:     service,
+		redisClient: redisClient,
 	}
 }
 
@@ -40,8 +43,11 @@ func (h *LicensePlateHandler) ScanLicensePlate(c *gin.Context) {
 			"record": rec,
 		}
 		if b, err := json.Marshal(payload); err == nil {
-			// use request context so cancellation propagates
-			_ = eventbus.Publish(c.Request.Context(), "events", string(b))
+			// write to outbox for reliable delivery
+			if _, err := h.service.InsertOutboxEvent("events", string(b)); err != nil {
+				// fallback: attempt direct publish if outbox write fails
+				_ = eventbus.Publish(c.Request.Context(), h.redisClient, "events", string(b))
+			}
 		}
 	}(record)
 

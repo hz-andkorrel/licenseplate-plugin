@@ -340,6 +340,85 @@ func (s *LicensePlateService) DeleteRecord(plateNumber string) error {
 	return nil
 }
 
+// Outbox: insert an event to be published reliably
+func (s *LicensePlateService) InsertOutboxEvent(channel, payload string) (int64, error) {
+	query := `
+		INSERT INTO outbox_events (channel, payload, attempts, created_at)
+		VALUES ($1, $2, 0, NOW())
+		RETURNING id
+	`
+	conn, err := s.db.GetConnection()
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	var id int64
+	err = conn.QueryRow(query, channel, payload).Scan(&id)
+	if err != nil {
+		log.Printf("[LicensePlateService] InsertOutboxEvent error: %v", err)
+		return 0, err
+	}
+	return id, nil
+}
+
+// FetchPendingOutboxEvents fetches unsent outbox events up to limit
+func (s *LicensePlateService) FetchPendingOutboxEvents(limit int) ([]models.OutboxEvent, error) {
+	query := `
+		SELECT id, channel, payload, attempts, last_error, created_at, sent_at
+		FROM outbox_events
+		WHERE sent_at IS NULL
+		ORDER BY created_at ASC
+		LIMIT $1
+	`
+	conn, err := s.db.GetConnection()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	rows, err := conn.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []models.OutboxEvent{}
+	for rows.Next() {
+		var e models.OutboxEvent
+		var lastError sql.NullString
+		var sentAt sql.NullTime
+		if err := rows.Scan(&e.ID, &e.Channel, &e.Payload, &e.Attempts, &lastError, &e.CreatedAt, &sentAt); err != nil {
+			log.Printf("[LicensePlateService] FetchPendingOutboxEvents scan error: %v", err)
+			continue
+		}
+		if lastError.Valid {
+			e.LastError = lastError.String
+		}
+		if sentAt.Valid {
+			t := sentAt.Time
+			e.SentAt = &t
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+// MarkOutboxSent marks the given outbox event as sent (sets sent_at)
+func (s *LicensePlateService) MarkOutboxSent(id int64) error {
+	query := `UPDATE outbox_events SET sent_at = NOW() WHERE id = $1`
+	_, err := s.db.Execute(query, id)
+	return err
+}
+
+// IncrementOutboxAttempts increments attempts and sets last_error
+func (s *LicensePlateService) IncrementOutboxAttempts(id int64, errMsg string) error {
+	query := `UPDATE outbox_events SET attempts = attempts + 1, last_error = $2 WHERE id = $1`
+	_, err := s.db.Execute(query, id, errMsg)
+	return err
+}
+
+
 func (s *LicensePlateService) SearchByGuestName(guestName string) []*models.LicensePlateRecord {
 	query := `
 		SELECT plate_number, guest_name, room_number, check_in, check_out, vehicle_make, vehicle_model, notes, visitor_type, access_expires_at, purpose, created_at

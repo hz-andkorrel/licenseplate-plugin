@@ -19,16 +19,22 @@ type Event struct {
 // It runs handler calls asynchronously so the caller (listener) is not blocked.
 func Dispatch(ctx context.Context, svc *services.LicensePlateService, rawMessage string) {
     var ev Event
+    log.Printf("[events] dispatching raw message: %s", rawMessage)
     if err := json.Unmarshal([]byte(rawMessage), &ev); err != nil {
         log.Printf("[events] invalid event JSON: %v", err)
         return
     }
 
+    log.Printf("[events] parsed event type=%s", ev.Type)
+
     switch ev.Type {
     case "licenseplate.scanned":
+        log.Printf("[events] routing to HandleLicenseplateScanned")
         go func() {
             if err := handlers.HandleLicenseplateScanned(svc, ctx, ev.Record); err != nil {
                 log.Printf("[events] licenseplate.scanned handler error: %v", err)
+            } else {
+                log.Printf("[events] licenseplate.scanned handled successfully")
             }
         }()
     default:
