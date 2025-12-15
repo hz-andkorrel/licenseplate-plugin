@@ -23,3 +23,14 @@ cd licenseplate-plugin
 $env:DATABASE_URL='postgres://user:pass@localhost:5432/dbname'
 go run main.go
 ```
+
+Run with Docker Compose (recommended for local testing)
+
+We included a `docker-compose.yml` and `Dockerfile` to run the plugin together with Postgres and Redis for development.
+
+```bash
+cd licenseplate-plugin
+docker-compose up --build
+```
+
+The service is exposed on port `9002` and reads configuration from `.env`. The compose file provides sensible defaults for `DATABASE_URL` and `HUB_BUS_ADDR` — update `.env` if you change credentials.
